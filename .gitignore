@@ -1,0 +1,7 @@
+node_modules
+typings
+*.un~
+*.swp~
+*.swp
+npm-debug.log
+dist
