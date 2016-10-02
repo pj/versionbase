@@ -13,6 +13,7 @@
     "rethinkdb": "registry:dt/rethinkdb#1.10.0+20160811111312",
     "sinon": "registry:dt/sinon#1.16.0+20160924120326",
     "uuid": "registry:dt/uuid#3.3.0+20160728152600",
+    "winston": "registry:dt/winston#0.0.0+20160417152829",
     "ws": "registry:dt/ws#0.0.0+20160922171501"
   },
   "dependencies": {

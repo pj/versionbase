@@ -4,6 +4,7 @@
 import {Server as WebSocketServer} from 'ws';
 import * as database from './database';
 import {Map} from "immutable";
+import * as winston from "winston";
 
 function generate_result(result, message_id, status=0, message="") {
     return JSON.stringify({
@@ -77,10 +78,10 @@ function process_message(ws, state, message) {
         let [new_snapshots, result] = dispatch_message(state.transshots, message);
         state.transshots = new_snapshots;
         let response = generate_result(result, message.message_id);
-        console.log("response: " + response);
+        winston.log('silly', "Response message", response)
         ws.send(response);
     } catch(e) {
-        console.error(e);
+        winston.error("database error", e)
         ws.close(1011, generate_result(e.stack, 1, e.toString()))
     }
 }
@@ -95,7 +96,9 @@ export function handle_message(ws, state, raw_message) {
             if (state.current_transaction_id === null) {
                 process_message(ws, state, message);
             } else if(times > 5) {
-                ws.close(1013, "Timed out waiting for transaction to complete");
+                let message =  "Timed out waiting for transaction to complete";
+                winston.error("database error - " + message);
+                ws.close(1013, message);
             } else {
                 times += 1;
             }
@@ -110,28 +113,27 @@ export function create_server(port=9876) {
     }
     const wss = new WebSocketServer({ port: port });
     wss.on('connection', function connection(ws) {
-        console.log("connected to client");
+        winston.debug("connected to client");
         ws.on('message', function (raw_message) {
-            console.log("message received: " + raw_message);
+            winston.log('silly', "message received", raw_message);
             handle_message(ws, state, raw_message);
         });
 
         ws.on('error', function (error) {
-            console.error(error);
+            winston.error("database error", error);
         });
 
         ws.on('close', function (code, message) {
             if (code != 1000) {
-                console.error(`connection closed with error: ${code} ${message}`);
+                winston.error(`connection closed with error: ${code} ${message}`);
             } else {
-                //ws.close(1000, JSON.stringify({message_id: }));
-                console.log(`connection closed with: ${code} ${message}`);
+                winston.debug(`connection closed with: ${code} ${message}`);
             }
         });
     });
 
     wss.on('error', function (error){
-        console.error(error);
+        winston.error('Web socket server error', error);
     });
-    console.log("Listening on " + port);
+    winston.debug("Listening on " + port);
 }

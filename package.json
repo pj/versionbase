@@ -34,6 +34,7 @@
     "autodts": "0.0.6",
     "commander": "^2.9.0",
     "denodeify": "^1.2.1",
+    "exprjs": "0.0.3",
     "fs-extra": "^0.30.0",
     "glob": "^7.0.6",
     "immutable": "^3.8.1",

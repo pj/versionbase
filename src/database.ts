@@ -2,6 +2,11 @@
 /// <reference path="../typings/auto.d.ts" />
 /// <reference path="./manual.d.ts" />
 import {Map, Record} from 'immutable';
+var jexl = require('Jexl');
+var exprjs = require('exprjs');
+
+var parser = new exprjs();
+
 var uuid = require('uuid');
 
 let Version = Record({parent: null, version_id: null, items: Map()});
@@ -53,10 +58,21 @@ export function create_item(snapshots, version_id, transaction_id, data) {
     return [new_snapshots, item_id];
 }
 
-export function find_items(snapshots, project, select, reduce, version_id, transaction_id) {
-    let snapshot = snapshots.get(transaction_id);
-    let git_version = snapshot.get(version_id);
-    let results = git_version.items.filter(select).reduce(reduce).map(project);
+export function find_items(snapshots, version_id, transaction_id,
+                           selection_expression, filter_expression) {
+    let items = snapshots.getIn([transaction_id, version_id, "items"]);
+    let filter_parsed = filter_expression !== null ? parser.parse(filter_expression) : parser.parse("true");
+    let select_parsed = selection_expression !== null ? parser.parse(selection_expression) : null;
+    let results = []
+    for (let item of items.values()) {
+        if (parser.run(filter_parsed, item)) {
+            if (select_parsed !== null) {
+                results.push(parser.run(select_parsed, item));
+            } else {
+                results.push(item);
+            }
+        }
+    }
 
     return [snapshots, results];
 }

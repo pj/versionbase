@@ -12,6 +12,9 @@ import {Connection} from "../src/client";
 import {Map} from "immutable";
 import * as sinon from "sinon";
 import * as events from "events";
+import * as winston from "winston";
+
+winston.level = "error";
 
 describe("the versionbase core logic", function () {
     it("should create a version tree", function () {
@@ -77,9 +80,58 @@ describe("the versionbase core logic", function () {
     });
 
     it("should find some items", function () {
-    });
+        let new_id, data, _, results;
+        let transshots = Map<string, Map<string, any>>();
+        transshots = database.create_version(transshots, "A", null);
+        transshots = database.create_version(transshots, "B", "A");
+        assert.equal(transshots.get("current").size, 2);
 
-    it("should reduce some items", function () {
+        let items = [
+            {age: 30,
+            location: "New York",
+            name: "Lana Kane",
+            gender: "F"},
+            {age: 90,
+            location: "New York",
+            name: "Woodhouse",
+            gender: "M"},
+            {age: 20,
+            location: "New York",
+            name: "Cheryl Tunt",
+            gender: "F"},
+            {age: 65,
+            location: "New York",
+            name: "Mallory Archer",
+            gender: "F"}
+        ]
+        for (let item of items) {
+            [transshots, _] = database.create_item(transshots, "B", "current", item);
+        }
+        [transshots, results] = database.find_items(transshots, "A", "current",
+                                                   "name", null);
+        assert.equal(results.length, 0);
+
+        [transshots, results] = database.find_items(transshots, "B", "current",
+                                                   "name", null);
+        assert.equal(results.length, 4);
+        assert.deepEqual(results, items.map(item => item.name));
+
+        [transshots, results] = database.find_items(transshots, "B", "current",
+                                                    null, "age > 50");
+        assert.equal(results.length, 2);
+        assert.deepEqual(results.map(result => result.name),
+                         items.filter(item => item.age > 50).map(item => item.name));
+
+        [transshots, results] = database.find_items(transshots, "B", "current",
+                                                    null, "gender == 'M'");
+        assert.equal(results.length, 1);
+        assert.deepEqual(results.map(result => result.name),
+                         items.filter(item => item.gender == 'M').map(item => item.name));
+        [transshots, results] = database.find_items(transshots, "B", "current",
+                                                    "name", "gender == 'M'");
+        assert.equal(results.length, 1);
+        assert.deepEqual(results,
+                         items.filter(item => item.gender == 'M').map(item => item.name));
     });
 });
 
@@ -362,13 +414,44 @@ describe("the versionbase client", function () {
 });
 
 class ServerMocket {
-    send(message) {
+    received_messages: any
+    constructor() {
+        this.received_messages = [];
+    }
 
+    send(message) {
+        this.received_messages.push(message);
     }
 
     close(code, message) {
 
     }
+
+    get_received_messages() {
+        return this.received_messages;
+    }
+}
+
+function test_message_send(state, messages, responses) {
+    let socket = new ServerMocket();
+    let socket_mock = sinon.mock(socket);
+    if (responses instanceof Array) {
+        for (let response of responses) {
+            socket_mock.expects("send")
+                .once()
+                .withArgs(JSON.stringify(response));
+        }
+    } else {
+        responses(socket_mock);
+    }
+
+    for (let message of messages) {
+        handle_message(socket, state, JSON.stringify(message));
+    }
+
+    socket_mock.verify();
+
+    return socket;
 }
 
 describe("the versionbase server", function () {
@@ -405,19 +488,9 @@ describe("the versionbase server", function () {
             result: null
         }
 
-        let socket = new ServerMocket();
-        let socket_mock = sinon.mock(socket);
-        socket_mock.expects("send")
-            .once()
-            .withArgs(JSON.stringify(first_response_message))
-        socket_mock.expects("send")
-            .once()
-            .withArgs(JSON.stringify(second_response_message));
-
-        handle_message(socket, state, JSON.stringify(first_request_message));
-        handle_message(socket, state, JSON.stringify(second_request_message));
-
-        socket_mock.verify();
+        test_message_send(state,
+                          [first_request_message, second_request_message],
+                          [first_response_message, second_response_message])
     });
 
     it("should reject non-existent parent version", function () {
@@ -440,15 +513,10 @@ describe("the versionbase server", function () {
             result: null
         }
 
-        let socket = new ServerMocket();
-        let socket_mock = sinon.mock(socket);
-        let asdf = socket_mock.expects("close")
-            .once()
-            .withArgs(1011);
-
-        handle_message(socket, state, JSON.stringify(first_request_message));
-
-        socket_mock.verify();
+        test_message_send(state, [first_request_message],
+                          function (socket_mock) {
+                              socket_mock.expects("close").once().withArgs(1011);
+                          });
     });
 
     it("should get data", function () {
@@ -479,15 +547,7 @@ describe("the versionbase server", function () {
                      version: "A"}
         }
 
-        let socket = new ServerMocket();
-        let socket_mock = sinon.mock(socket);
-        socket_mock.expects("send")
-            .once()
-            .withArgs(JSON.stringify(first_response_message));
-
-        handle_message(socket, state, JSON.stringify(first_request_message));
-
-        socket_mock.verify();
+        test_message_send(state, [first_request_message], [first_response_message]);
     });
 
     it("should create data", function () {
@@ -522,28 +582,24 @@ describe("the versionbase server", function () {
             message_id: "bar",
         }
 
-        let socket = new ServerMocket();
-        let socket_mock = sinon.mock(socket);
-        socket_mock.expects("send")
-            .once()
-            .withArgs(JSON.stringify(first_response_message))
-        socket_mock.expects("send")
-            .once()
-            .withArgs(
-                sinon.match(function (value) {
-                    let json_value = JSON.parse(value);
+        test_message_send(state, [first_request_message, second_request_message],
+                          function (socket_mock) {
+                            socket_mock.expects("send")
+                                .once()
+                                .withArgs(JSON.stringify(first_response_message))
+                            socket_mock.expects("send")
+                                .once()
+                                .withArgs(
+                                    sinon.match(function (value) {
+                                        let json_value = JSON.parse(value);
 
-                    return json_value["status"] === second_response_message["status"] &&
-                        json_value["message"] === second_response_message["message"] &&
-                        json_value["message_id"] === second_response_message["message_id"] &&
-                        json_value.result;
-                })
-            );
-
-        handle_message(socket, state, JSON.stringify(first_request_message));
-        handle_message(socket, state, JSON.stringify(second_request_message));
-
-        socket_mock.verify();
+                                        return json_value["status"] === second_response_message["status"] &&
+                                            json_value["message"] === second_response_message["message"] &&
+                                            json_value["message_id"] === second_response_message["message_id"] &&
+                                            json_value.result;
+                                    })
+                                );
+                          });
 
         assert.equal(state.transshots.getIn(["current", "A", "items"]).size, 1);
     });
@@ -574,15 +630,7 @@ describe("the versionbase server", function () {
             result: null
         }
 
-        let socket = new ServerMocket();
-        let socket_mock = sinon.mock(socket);
-        socket_mock.expects("send")
-            .once()
-            .withArgs(JSON.stringify(first_response_message));
-
-        handle_message(socket, state, JSON.stringify(first_request_message));
-
-        socket_mock.verify();
+        test_message_send(state, [first_request_message], [first_response_message]);
     });
 
     it("should update data", function () {
@@ -612,18 +660,88 @@ describe("the versionbase server", function () {
             result: null
         }
 
-        let socket = new ServerMocket();
-        let socket_mock = sinon.mock(socket);
-        socket_mock.expects("send")
-            .once()
-            .withArgs(JSON.stringify(first_response_message));
-
-        handle_message(socket, state, JSON.stringify(first_request_message));
-
-        socket_mock.verify();
+        test_message_send(state, [first_request_message], [first_response_message]);
     });
 
     it("should apply two transactions in order.", function () {
+        let state = {
+            current_transaction_id: null,
+            transshots: Map()
+        };
+        let transshots, item_id;
+        transshots = database.create_version(state.transshots, "A", null);
+
+        [transshots, item_id] = database.create_item(transshots, "A",
+                                                     "current", {"hello": "world"});
+        state.transshots = transshots;
+
+        let first_request_message = {
+            operation: "begin",
+            message_id: "foo"
+        }
+
+        let first_response_message = {
+            status: 0,
+            message: "",
+            message_id: "foo",
+            result: null
+        }
+
+        //let socket = new ServerMocket();
+        //let socket_mock = sinon.mock(socket);
+        //socket_mock.expects("send")
+            //.once()
+            //.withArgs(
+                //sinon.match(function (value) {
+                    //let json_value = JSON.parse(value);
+
+                    //return json_value["status"] === first_response_message["status"] &&
+                        //json_value["message"] === first_response_message["message"] &&
+                        //json_value["message_id"] === first_response_message["message_id"] &&
+                        //json_value.result;
+                //})
+
+        //handle_message(socket, state, JSON.stringify(first_request_message));
+
+        //socket_mock.verify();
+
+        //let received_messages = socket_mock.get_received_messages();
+
+        //let transaction_id = JSON.parse(received_messages[0])["result"];
+
+        //let second_request_message = {
+            //operation: "begin",
+            //message_id: "foo"
+        //}
+
+        //let third_request_message = {
+            //operation: "update",
+            //message_id: "foo",
+            //item_id: item_id,
+            //data: {"hello": "world"}
+        //}
+
+        //let first_request_message = {
+            //operation: "begin",
+            //message_id: "foo",
+        //}
+
+        //let first_response_message = {
+            //status: 0,
+            //message: "",
+            //message_id: "foo",
+            //result: null
+        //}
+
+        //let socket = new ServerMocket();
+        //let socket_mock = sinon.mock(socket);
+        //socket_mock.expects("send")
+            //.once()
+            //.withArgs(JSON.stringify(first_response_message));
+
+        //handle_message(socket, state, JSON.stringify(first_request_message));
+
+        //socket_mock.verify();
 
     });
 
