@@ -14,33 +14,36 @@ import * as sinon from "sinon";
 import * as events from "events";
 import * as winston from "winston";
 
+var pi = require("pretty-immutable");
+
 winston.level = "error";
 
 describe("the versionbase core logic", function () {
     it("should create a version tree", function () {
+        let result;
         let transshots = Map<string, Map<string, any>>();
-        transshots = database.create_version(transshots, "A", null);
+        [transshots, result] = database.create_version(transshots, "A", null, null);
         assert.equal(transshots.size, 1);
-        transshots = database.create_version(transshots, "B", "A");
-        transshots = database.create_version(transshots, "C", "A");
-        transshots = database.create_version(transshots, "D", "C");
+        [transshots, result] = database.create_version(transshots, "B", null, ["A"]);
+        [transshots, result] = database.create_version(transshots, "C", null, ["A"]);
+        [transshots, result] = database.create_version(transshots, "D", null, ["C"]);
         assert.equal(transshots.get("current").size, 4);
 
         let version = transshots.get("current").get("D");
-        assert.equal(version.parent.version_id, "C");
-        assert.equal(version.parent.parent.version_id, "A");
+        assert.equal(version.parents.get(0).version_id, "C");
+        assert.equal(version.parents.get(0).parents.get(0).version_id, "A");
 
         version = transshots.get("current").get("B");
-        assert.equal(version.parent.version_id, "A");
+        assert.equal(version.parents.get(0).version_id, "A");
         version = transshots.get("current").get("A");
-        assert.isNull(version.parent);
+        assert.equal(version.parents.size, 0);
     });
 
     it("should CRUD items", function () {
-        let new_id, data;
+        let new_id, data, result;
         let transshots = Map<string, Map<string, any>>();
-        transshots = database.create_version(transshots, "A", null);
-        transshots = database.create_version(transshots, "B", "A");
+        [transshots, result] = database.create_version(transshots, "A", null, null);
+        [transshots, result] = database.create_version(transshots, "B", null, ["A"]);
         assert.equal(transshots.get("current").size, 2);
 
         [transshots, new_id] = database.create_item(transshots, "B", "current", {message: "hello"});
@@ -50,40 +53,40 @@ describe("the versionbase core logic", function () {
         assert.equal(current.get("A").items.size, 0);
         assert.equal(current.get("B").items.size, 1);
 
-        data = database.get_item(transshots, new_id, "B", "current");
+        [transshots, data] = database.get_item(transshots, new_id, "B", "current");
         assert.equal(data.message, "hello");
         assert.equal(data.id, new_id);
         assert.equal(data.version, "B");
-        data = database.get_item(transshots, "asdf", "B", "current");
+        [transshots, data] = database.get_item(transshots, "asdf", "B", "current");
         assert.isNull(data);
-        data = database.get_item(transshots, new_id, "A", "current");
+        [transshots, data] = database.get_item(transshots, new_id, "A", "current");
         assert.isNull(data);
 
         [transshots, new_id] = database.create_item(transshots, "A", "current", {message: "foo"});
-        transshots = database.update_item(transshots, new_id, "B", "current", {message: "bar"});
-        data = database.get_item(transshots, new_id, "A", "current");
+        [transshots, result] = database.update_item(transshots, new_id, "B", "current", {message: "bar"});
+        [transshots, data] = database.get_item(transshots, new_id, "A", "current");
         assert.equal(data.message, "foo");
         assert.equal(data.id, new_id);
         assert.equal(data.version, "A");
-        data = database.get_item(transshots, new_id, "B", "current");
+        [transshots, data] = database.get_item(transshots, new_id, "B", "current");
         assert.equal(data.message, "bar");
         assert.equal(data.id, new_id);
         assert.equal(data.version, "B");
 
-        transshots = database.delete_item(transshots, new_id, "B", "current");
-        data = database.get_item(transshots, new_id, "A", "current");
+        [transshots, result] = database.delete_item(transshots, new_id, "B", "current");
+        [transshots, data] = database.get_item(transshots, new_id, "A", "current");
         assert.equal(data.message, "foo");
         assert.equal(data.id, new_id);
         assert.equal(data.version, "A");
-        data = database.get_item(transshots, new_id, "B", "current");
+        [transshots, data] = database.get_item(transshots, new_id, "B", "current");
         assert.isNull(data);
     });
 
     it("should find some items", function () {
         let new_id, data, _, results;
         let transshots = Map<string, Map<string, any>>();
-        transshots = database.create_version(transshots, "A", null);
-        transshots = database.create_version(transshots, "B", "A");
+        [transshots, _] = database.create_version(transshots, "A", null, null);
+        [transshots, _] = database.create_version(transshots, "B", null, ["A"]);
         assert.equal(transshots.get("current").size, 2);
 
         let items = [
@@ -137,10 +140,10 @@ describe("the versionbase core logic", function () {
 
 describe("versionbase transaction", function () {
     function common_transaction() {
-        let first_id, second_id, data, transaction_id;
+        let first_id, second_id, data, transaction_id, _;
         let transshots = Map<string, Map<string, any>>();
-        transshots = database.create_version(transshots, "A", null);
-        transshots = database.create_version(transshots, "B", "A");
+        [transshots, _] = database.create_version(transshots, "A", null, null);
+        [transshots, _] = database.create_version(transshots, "B", null, ["A"]);
         assert.equal(transshots.get("current").size, 2);
 
         [transshots, transaction_id] = database.begin_transaction(transshots, "current");
@@ -149,13 +152,13 @@ describe("versionbase transaction", function () {
         [transshots, second_id] = database.create_item(transshots, "B",
                                                        transaction_id, {message: "bar"});
 
-        transshots = database.delete_item(transshots, first_id, "B", transaction_id);
-        transshots = database.update_item(transshots, second_id, "B",
+        [transshots, _] = database.delete_item(transshots, first_id, "B", transaction_id);
+        [transshots, _] = database.update_item(transshots, second_id, "B",
                                           transaction_id, {message: "baz"});
 
-        data = database.get_item(transshots, first_id, "B", transaction_id);
+        [transshots, data] = database.get_item(transshots, first_id, "B", transaction_id);
         assert.isNull(data);
-        data = database.get_item(transshots, second_id, "B", transaction_id);
+        [transshots, data] = database.get_item(transshots, second_id, "B", transaction_id);
         assert.equal(data.message, "baz");
         assert.equal(data.id, second_id);
         assert.equal(data.version, "B");
@@ -168,48 +171,62 @@ describe("versionbase transaction", function () {
     };
 
     it("should apply transaction", function () {
+        let _, data;
         let [transshots, first_id, second_id, transaction_id] = common_transaction();
-        transshots = database.commit_transaction(transshots, transaction_id);
-        // now checkout
-        let data = database.get_item(transshots, first_id, "B", "current");
+        [transshots, _] = database.commit_transaction(transshots, transaction_id);
+
+        [transshots, data] = database.get_item(transshots, first_id, "B", "current");
         assert.isNull(data);
-        data = database.get_item(transshots, second_id, "B", "current");
+        [transshots, data] = database.get_item(transshots, second_id, "B", "current");
         assert.equal(data.message, "baz");
         assert.equal(data.id, second_id);
         assert.equal(data.version, "B");
     });
 
     it("should rollback transaction", function () {
+        let _, data;
         let [transshots, first_id, second_id, transaction_id] = common_transaction();
-        transshots = database.rollback_transaction(transshots, transaction_id);
-        // now checkout
-        let data = database.get_item(transshots, first_id, "B", "current");
+        [transshots, _] = database.rollback_transaction(transshots, transaction_id);
+
+        [transshots, data] = database.get_item(transshots, first_id, "B", "current");
         assert.isNull(data);
-        data = database.get_item(transshots, second_id, "B", "current");
+        [transshots, data] = database.get_item(transshots, second_id, "B", "current");
         assert.isNull(data);
         assert.equal(transshots.get("current").size, 2);
         assert.equal(transshots.get("current").get("B").items.size, 0);
     });
 
-    it("should reject transaction when current modified", function () {
-        let third_id;
-        let [transshots, first_id, second_id, transaction_id] = common_transaction();
+    it.skip("should merge two transactions", function () {
+        //let third_id;
+        //let [transshots, first_id, second_id, transaction_id] = common_transaction();
 
-        [transshots, third_id] = database.create_item(transshots, "B",
-                                                      "current", {message: "foo"});
+        //[transshots, third_id] = database.create_item(transshots, "B",
+                                                      //"current", {message: "foo"});
 
-        assert.throws(function () {
-            database.commit_transaction(transshots, transaction_id);
-        }, "Concurrent updates not allowed!");
+        //assert.throws(function () {
+            //database.commit_transaction(transshots, transaction_id);
+        //}, "Concurrent updates not allowed!");
+    });
+
+    it.skip("should reject transaction when another has already modified current", function () {
+        //let third_id;
+        //let [transshots, first_id, second_id, transaction_id] = common_transaction();
+
+        //[transshots, third_id] = database.create_item(transshots, "B",
+                                                      //"current", {message: "foo"});
+
+        //assert.throws(function () {
+            //database.commit_transaction(transshots, transaction_id);
+        //}, "Concurrent updates not allowed!");
     });
 });
 
 describe("versionbase snapshots", function () {
     it("should leave snapshot unmodified after creation", function () {
-        let first_id, second_id, data, snapshot_id;
+        let first_id, second_id, data, snapshot_id, _;
         let transshots = Map<string, Map<string, any>>();
-        transshots = database.create_version(transshots, "A", null);
-        transshots = database.create_version(transshots, "B", "A");
+        [transshots, _] = database.create_version(transshots, "A", null, null);
+        [transshots, _] = database.create_version(transshots, "B", null, ["A"]);
         assert.equal(transshots.get("current").size, 2);
 
         [transshots, first_id] = database.create_item(transshots, "B",
@@ -219,32 +236,32 @@ describe("versionbase snapshots", function () {
 
         [transshots, snapshot_id] = database.create_snapshot(transshots, "current");
 
-        transshots = database.delete_item(transshots, first_id, "B", "current");
-        transshots = database.update_item(transshots, second_id, "B",
+        [transshots, _] = database.delete_item(transshots, first_id, "B", "current");
+        [transshots, _] = database.update_item(transshots, second_id, "B",
                                           "current", {message: "baz"});
-        data = database.get_item(transshots, first_id, "B", "current");
+        [transshots, data] = database.get_item(transshots, first_id, "B", "current");
         assert.isNull(data);
-        data = database.get_item(transshots, second_id, "B", "current");
+        [transshots, data] = database.get_item(transshots, second_id, "B", "current");
         assert.equal(data.message, "baz");
         assert.equal(data.id, second_id);
         assert.equal(data.version, "B");
 
-        data = database.get_item(transshots, first_id, "B", snapshot_id);
+        [transshots, data] = database.get_item(transshots, first_id, "B", snapshot_id);
         assert.isNotNull(data);
         assert.equal(data.message, "foo");
         assert.equal(data.id, first_id);
         assert.equal(data.version, "B");
-        data = database.get_item(transshots, second_id, "B", snapshot_id);
+        [transshots, data] = database.get_item(transshots, second_id, "B", snapshot_id);
         assert.equal(data.message, "bar");
         assert.equal(data.id, second_id);
         assert.equal(data.version, "B");
     });
 
     it("should leave current unmodified after snapshot deleted", function () {
-        let first_id, second_id, data, snapshot_id;
+        let first_id, second_id, data, snapshot_id, _;
         let transshots = Map<string, Map<string, any>>();
-        transshots = database.create_version(transshots, "A", null);
-        transshots = database.create_version(transshots, "B", "A");
+        [transshots, _] = database.create_version(transshots, "A", null, null);
+        [transshots, _] = database.create_version(transshots, "B", null, ["A"]);
         assert.equal(transshots.get("current").size, 2);
 
         [transshots, first_id] = database.create_item(transshots, "B",
@@ -253,23 +270,23 @@ describe("versionbase snapshots", function () {
                                                        "current", {message: "bar"});
 
         [transshots, snapshot_id] = database.create_snapshot(transshots, "current");
-        transshots = database.delete_snapshot(transshots, snapshot_id);
+        [transshots, _] = database.delete_snapshot(transshots, snapshot_id);
 
-        data = database.get_item(transshots, first_id, "B", "current");
+        [transshots, data] = database.get_item(transshots, first_id, "B", "current");
         assert.equal(data.message, "foo");
         assert.equal(data.id, first_id);
         assert.equal(data.version, "B");
-        data = database.get_item(transshots, second_id, "B", "current");
+        [transshots, data] = database.get_item(transshots, second_id, "B", "current");
         assert.equal(data.message, "bar");
         assert.equal(data.id, second_id);
         assert.equal(data.version, "B");
     });
 
     it("should leave snapshot unmodified after transaction", function () {
-        let first_id, second_id, data, snapshot_id, transaction_id;
+        let first_id, second_id, data, snapshot_id, transaction_id, _;
         let transshots = Map<string, Map<string, any>>();
-        transshots = database.create_version(transshots, "A", null);
-        transshots = database.create_version(transshots, "B", "A");
+        [transshots, _] = database.create_version(transshots, "A", null, null);
+        [transshots, _] = database.create_version(transshots, "B", null, ["A"]);
         assert.equal(transshots.get("current").size, 2);
 
         [transshots, first_id] = database.create_item(transshots, "B",
@@ -281,23 +298,23 @@ describe("versionbase snapshots", function () {
 
         [transshots, transaction_id] = database.begin_transaction(transshots, snapshot_id);
 
-        transshots = database.delete_item(transshots, first_id, "B", transaction_id);
-        transshots = database.update_item(transshots, second_id, "B", transaction_id, {message: "baz"});
-        transshots = database.commit_transaction(transshots, transaction_id);
+        [transshots, _] = database.delete_item(transshots, first_id, "B", transaction_id);
+        [transshots, _] = database.update_item(transshots, second_id, "B", transaction_id, {message: "baz"});
+        [transshots, _] = database.commit_transaction(transshots, transaction_id);
 
-        data = database.get_item(transshots, first_id, "B", "current");
+        [transshots, data] = database.get_item(transshots, first_id, "B", "current");
         assert.isNull(data);
-        data = database.get_item(transshots, second_id, "B", "current");
+        [transshots, data] = database.get_item(transshots, second_id, "B", "current");
         assert.equal(data.message, "baz");
         assert.equal(data.id, second_id);
         assert.equal(data.version, "B");
 
-        data = database.get_item(transshots, first_id, "B", snapshot_id);
+        [transshots, data] = database.get_item(transshots, first_id, "B", snapshot_id);
         assert.isNotNull(data);
         assert.equal(data.message, "foo");
         assert.equal(data.id, first_id);
         assert.equal(data.version, "B");
-        data = database.get_item(transshots, second_id, "B", snapshot_id);
+        [transshots, data] = database.get_item(transshots, second_id, "B", snapshot_id);
         assert.equal(data.message, "bar");
         assert.equal(data.id, second_id);
         assert.equal(data.version, "B");
@@ -432,7 +449,7 @@ class ServerMocket {
     }
 }
 
-function test_message_send(state, messages, responses) {
+function test_message_send(transshots, messages, responses) {
     let socket = new ServerMocket();
     let socket_mock = sinon.mock(socket);
     if (responses instanceof Array) {
@@ -446,20 +463,17 @@ function test_message_send(state, messages, responses) {
     }
 
     for (let message of messages) {
-        handle_message(socket, state, JSON.stringify(message));
+        transshots = handle_message(socket, transshots, JSON.stringify(message));
     }
 
     socket_mock.verify();
 
-    return socket;
+    return [transshots, socket];
 }
 
 describe("the versionbase server", function () {
     it("should create versions", function () {
-        let state = {
-            current_transaction_id: null,
-            transshots: Map()
-        };
+        let transshots = Map();
 
         let first_request_message = {
             operation: "create_version",
@@ -471,7 +485,7 @@ describe("the versionbase server", function () {
             operation: "create_version",
             message_id: "bar",
             commit_id: "B",
-            parent_commit_id: "A"
+            parents: ["A"]
         }
 
         let first_response_message = {
@@ -488,22 +502,19 @@ describe("the versionbase server", function () {
             result: null
         }
 
-        test_message_send(state,
+        test_message_send(transshots,
                           [first_request_message, second_request_message],
                           [first_response_message, second_response_message])
     });
 
     it("should reject non-existent parent version", function () {
-        let state = {
-            current_transaction_id: null,
-            transshots: Map()
-        };
+        let transshots = Map();
 
         let first_request_message = {
             operation: "create_version",
             message_id: "foo",
             commit_id: "B",
-            parent_commit_id: "A"
+            parents: ["A"]
         }
 
         let first_response_message = {
@@ -513,23 +524,19 @@ describe("the versionbase server", function () {
             result: null
         }
 
-        test_message_send(state, [first_request_message],
+        test_message_send(transshots,
+                          [first_request_message],
                           function (socket_mock) {
                               socket_mock.expects("close").once().withArgs(1011);
                           });
     });
 
     it("should get data", function () {
-        let state = {
-            current_transaction_id: null,
-            transshots: Map()
-        };
-        let transshots, item_id;
-        transshots = database.create_version(state.transshots, "A", null);
+        let transshots = Map();
+        let item_id, _;
+        [transshots, _] = database.create_version(transshots, "A", null, null);
         [transshots, item_id] = database.create_item(transshots, "A",
                                                      "current", {"hello": "world"});
-
-        state.transshots = transshots;
 
         let first_request_message = {
             operation: "get",
@@ -547,14 +554,12 @@ describe("the versionbase server", function () {
                      version: "A"}
         }
 
-        test_message_send(state, [first_request_message], [first_response_message]);
+        test_message_send(transshots, [first_request_message], [first_response_message]);
     });
 
     it("should create data", function () {
-        let state = {
-            current_transaction_id: null,
-            transshots: Map()
-        };
+        let _;
+        let transshots = Map();
 
         let first_request_message = {
             operation: "create_version",
@@ -576,13 +581,14 @@ describe("the versionbase server", function () {
             result: null
         }
 
-        let second_response_message = {
+        var second_response_message = {
             status: 0,
             message: "",
-            message_id: "bar",
+            message_id: "bar"
         }
-
-        test_message_send(state, [first_request_message, second_request_message],
+        console.log(transshots);
+        [transshots, _] = test_message_send(transshots,
+                                            [first_request_message, second_request_message],
                           function (socket_mock) {
                             socket_mock.expects("send")
                                 .once()
@@ -601,20 +607,15 @@ describe("the versionbase server", function () {
                                 );
                           });
 
-        assert.equal(state.transshots.getIn(["current", "A", "items"]).size, 1);
+        assert.equal(transshots.getIn(["current", "A", "items"]).size, 1);
     });
 
     it("should delete data", function () {
-        let state = {
-            current_transaction_id: null,
-            transshots: Map()
-        };
-        let transshots, item_id;
-        transshots = database.create_version(state.transshots, "A", null);
+        let transshots = Map();
+        let item_id, _;
+        [transshots, _] = database.create_version(transshots, "A", null, null);
         [transshots, item_id] = database.create_item(transshots, "A",
                                                      "current", {"hello": "world"});
-
-        state.transshots = transshots;
 
         let first_request_message = {
             operation: "delete",
@@ -630,20 +631,15 @@ describe("the versionbase server", function () {
             result: null
         }
 
-        test_message_send(state, [first_request_message], [first_response_message]);
+        test_message_send(transshots, [first_request_message], [first_response_message]);
     });
 
     it("should update data", function () {
-        let state = {
-            current_transaction_id: null,
-            transshots: Map()
-        };
-        let transshots, item_id;
-        transshots = database.create_version(state.transshots, "A", null);
+        let transshots = Map();
+        let item_id, _;
+        [transshots, _] = database.create_version(transshots, "A", null, null);
         [transshots, item_id] = database.create_item(transshots, "A",
                                                      "current", {"hello": "world"});
-
-        state.transshots = transshots;
 
         let first_request_message = {
             operation: "update",
@@ -660,21 +656,16 @@ describe("the versionbase server", function () {
             result: null
         }
 
-        test_message_send(state, [first_request_message], [first_response_message]);
+        test_message_send(transshots, [first_request_message], [first_response_message]);
     });
 
-    it("should apply two transactions in order.", function () {
-        let state = {
-            current_transaction_id: null,
-            transshots: Map()
-        };
-        let transshots, item_id;
-        transshots = database.create_version(state.transshots, "A", null);
+    it.skip("should apply two transactions in order.", function () {
+        let transshots = Map();
+        let item_id, _;
+        [transshots, _] = database.create_version(transshots, "A", null, null);
 
         [transshots, item_id] = database.create_item(transshots, "A",
                                                      "current", {"hello": "world"});
-        state.transshots = transshots;
-
         let first_request_message = {
             operation: "begin",
             message_id: "foo"
@@ -745,7 +736,7 @@ describe("the versionbase server", function () {
 
     });
 
-    it("should time a transaction out if current transaction isn't changed.", function () {
+    it.skip("should time a transaction out if current transaction isn't changed.", function () {
 
     });
 });

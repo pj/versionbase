@@ -28,7 +28,8 @@
     "@lib/autodts-generator": "~0.0.1",
     "chai": "~3.5.0",
     "chai-as-promised": "^5.1.0",
-    "mocha": "~3.0.2"
+    "mocha": "~3.0.2",
+    "pretty-immutable": "^1.0.1"
   },
   "dependencies": {
     "autodts": "0.0.6",

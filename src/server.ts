@@ -18,18 +18,19 @@ function generate_result(result, message_id, status=0, message="") {
 function dispatch_message(snapshots, message) {
     switch (message.operation) {
         case "get":
-            let result = database.get_item(snapshots, message.item_id, message.version_id,
-                                      message.transaction_id || "current");
-            return [snapshots, result];
+            return database.get_item(snapshots,
+                                     message.item_id,
+                                     message.version_id,
+                                     message.transaction_id || "current");
         case "update":
-            return [database.update_item(snapshots, message.item_id,
+            return database.update_item(snapshots, message.item_id,
                                     message.version_id,
                                     message.transaction_id || "current",
-                                    message.data), null];
+                                    message.data);
         case "delete":
-            return [database.delete_item(snapshots, message.item_id,
+            return database.delete_item(snapshots, message.item_id,
                                     message.version_id,
-                                    message.transaction_id || "current"), null];
+                                    message.transaction_id || "current");
         case "create":
             return database.create_item(snapshots,
                                    message.version_id,
@@ -37,86 +38,102 @@ function dispatch_message(snapshots, message) {
                                    message.data);
         case "find":
             return database.find_items(snapshots,
-                                 message.project,
-                                 message.select,
-                                 message.reduce,
                                  message.version_id,
-                                 message.transaction_id || "current");
+                                 message.transaction_id || "current",
+                                 message.select || null,
+                                 message.filter || null);
         // start transaction.
         case "begin":
-            return database.begin_transaction(snapshots, message.snapshot_id || "current");
+            return database.begin_transaction(snapshots,
+                                              message.snapshot_id || "current");
         // commit transaction.
         case "commit":
-            return [database.commit_transaction(snapshots, message.transaction_id), null];
+            return database.commit_transaction(snapshots,
+                                               message.transaction_id);
         // rollback transaction.
         case "rollback":
-            return [database.rollback_transaction(snapshots, message.transaction_id), null];
+            return database.rollback_transaction(snapshots,
+                                                 message.transaction_id);
         case "create_snapshot":
-            return database.create_snapshot(snapshots, message.snapshot_id || "current");
+            return database.create_snapshot(snapshots,
+                                            message.snapshot_id || "current");
         case "delete_snapshot":
-            return [database.delete_snapshot(snapshots, message.snapshot_id), null];
+            return database.delete_snapshot(snapshots, message.snapshot_id);
         // add a new git version to current snapshot.
         case "create_version":
             if (message.commit_id === undefined || message.commit_id === null) {
                 throw new Error("No commit id supplied");
             };
-            return [database.create_version(snapshots, message.commit_id,
-                                            message.parent_commit_id), null];
+            //if (message.parents === undefined || message.parents === null
+                //|| !Array.isArray(message.parents)) {
+                //throw new Error("Commit parents not present or not an array.");
+            //};
+            return database.create_version(snapshots,
+                                           message.commit_id,
+                                           message.data_parent_id || null,
+                                           message.parents || null);
         case "version_exists":
             if (message.commit_id === undefined || message.commit_id === null) {
                 throw new Error("No commit id supplied");
             };
             return database.version_exists(snapshots, message.commit_id);
+        case "set_all_version_items":
+            if (message.source_commit_id === undefined || message.source_commit_id === null) {
+                throw new Error("No source commit id supplied");
+            };
+            if (message.destination_commit_id === undefined || message.destination_commit_id === null) {
+                throw new Error("No destination commit id supplied");
+            };
+            return database
+                .set_all_version_items(snapshots,
+                                       message.source_snapshot_id || "current",
+                                       message.destination_snapshot_id || "current",
+                                       message.source_commit_id,
+                                       message.destination_commit_id)
+        case "copy_version_items":
+            if (message.source_commit_id === undefined || message.source_commit_id === null) {
+                throw new Error("No source commit id supplied");
+            };
+            if (message.destination_commit_id === undefined || message.destination_commit_id === null) {
+                throw new Error("No destination commit id supplied");
+            };
+            if (message.item_ids === undefined || message.item_ids === null
+                || !Array.isArray(message.item_ids)) {
+                throw new Error("Item ids must be present and an array");
+            };
+            return database
+                .copy_version_items(snapshots,
+                                       message.source_snapshot_id || "current",
+                                       message.destination_snapshot_id || "current",
+                                       message.source_commit_id,
+                                       message.destination_commit_id,
+                                       message.source_ids,
+                                       message.replace || false);
         }
 }
 
-function process_message(ws, state, message) {
-    if (message.transaction_id) {
-        state.current_transaction_id = message.transaction_id;
-    }
+export function handle_message(ws, transshots, raw_message) {
     try {
-        let [new_snapshots, result] = dispatch_message(state.transshots, message);
-        state.transshots = new_snapshots;
+        let message = JSON.parse(raw_message);
+        winston.log('silly', "Request message", message);
+        let [new_snapshots, result] = dispatch_message(transshots, message);
         let response = generate_result(result, message.message_id);
         winston.log('silly', "Response message", response)
         ws.send(response);
+        return new_snapshots;
     } catch(e) {
         winston.error("database error", e)
         ws.close(1011, generate_result(e.stack, 1, e.toString()))
     }
 }
 
-export function handle_message(ws, state, raw_message) {
-    let message = JSON.parse(raw_message);
-    if (state.current_transaction_id === null || (message.transaction_id && message.transaction_id === state.current_transaction_id)) {
-        process_message(ws, state, message);
-    } else {
-        let times = 0;
-        let transaction_interval = setInterval(function (){
-            if (state.current_transaction_id === null) {
-                process_message(ws, state, message);
-            } else if(times > 5) {
-                let message =  "Timed out waiting for transaction to complete";
-                winston.error("database error - " + message);
-                ws.close(1013, message);
-            } else {
-                times += 1;
-            }
-        }, 100);
-    }
-}
-
 export function create_server(port=9876) {
-    let state = {
-        current_transaction_id: null,
-        transshots: Map()
-    }
+    let transshots = Map();
     const wss = new WebSocketServer({ port: port });
     wss.on('connection', function connection(ws) {
         winston.debug("connected to client");
         ws.on('message', function (raw_message) {
-            winston.log('silly', "message received", raw_message);
-            handle_message(ws, state, raw_message);
+            transshots = handle_message(ws, transshots, raw_message);
         });
 
         ws.on('error', function (error) {
