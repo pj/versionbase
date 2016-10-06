@@ -19,10 +19,7 @@
     "add_all_versions": "dist/versionbase/scripts/add_all_versions.js"
   },
   "scripts": {
-    "test": "mocha --compilers ts:ts-node/register,tsx:ts-node/register",
-    "preinstall": "npm install autodts",
-    "postinstall": "autodts link",
-    "prepublish": "tsc && autodts generate"
+    "test": "mocha --compilers ts:ts-node/register,tsx:ts-node/register"
   },
   "devDependencies": {
     "@lib/autodts-generator": "~0.0.1",
@@ -39,13 +36,15 @@
     "fs-extra": "^0.30.0",
     "glob": "^7.0.6",
     "immutable": "^3.8.1",
+    "jexl": "^1.1.4",
     "jsonfile": "^2.2.3",
     "q": "^1.4.1",
     "q-io": "^1.13.1",
     "sinon": "^1.17.6",
     "ts-node": "^1.2.3",
-    "typescript": "^1.8.10",
+    "typescript": "^2.0.0",
     "uuid": "^2.0.2",
+    "winston": "^2.2.0",
     "ws": "^1.1.1"
   }
 }

@@ -12,7 +12,7 @@ import {Connection} from "../src/client";
 import {Map} from "immutable";
 import * as sinon from "sinon";
 import * as events from "events";
-import * as winston from "winston";
+var winston = require('winston');
 
 var pi = require("pretty-immutable");
 
@@ -83,14 +83,14 @@ describe("the versionbase server", function () {
             result: null
         }
 
-        var second_response_message = {
+        let second_response_message = {
             status: 0,
             message: "",
             message_id: "bar"
         }
 
         // DELETE THIS AND IT WILL FAIL!
-        console.log("blah");
+        second_response_message;
         // -------------
 
         [transshots, _] = test_message_send(transshots,
