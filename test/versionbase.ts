@@ -12,7 +12,7 @@ import {Connection} from "../src/client";
 import {Map} from "immutable";
 import * as sinon from "sinon";
 import * as events from "events";
-import * as winston from "winston";
+var winston = require("winston");
 
 var pi = require("pretty-immutable");
 
@@ -196,28 +196,78 @@ describe("versionbase transaction", function () {
         assert.equal(transshots.get("current").get("B").items.size, 0);
     });
 
-    it.skip("should merge two transactions", function () {
-        //let third_id;
-        //let [transshots, first_id, second_id, transaction_id] = common_transaction();
+    it("should merge two transactions", function () {
+        let first_id, second_id, third_id, data, first_transaction_id,
+            second_transaction_id, _;
+        let transshots = Map<string, Map<string, any>>();
+        [transshots, _] = database.create_version(transshots, "A", null, null);
+        [transshots, _] = database.create_version(transshots, "B", null, ["A"]);
+        assert.equal(transshots.get("current").size, 2);
 
-        //[transshots, third_id] = database.create_item(transshots, "B",
-                                                      //"current", {message: "foo"});
+        [transshots, first_transaction_id] = database.begin_transaction(transshots, "current");
+        [transshots, second_transaction_id] = database.begin_transaction(transshots, "current");
 
-        //assert.throws(function () {
-            //database.commit_transaction(transshots, transaction_id);
-        //}, "Concurrent updates not allowed!");
+        [transshots, first_id] = database.create_item(transshots, "B",
+                                                      first_transaction_id,
+                                                      {message: "foo"});
+        [transshots, second_id] = database.create_item(transshots, "B",
+                                                       first_transaction_id,
+                                                       {message: "bar"});
+
+        [transshots, _] = database.commit_transaction(transshots, first_transaction_id);
+
+        [transshots, third_id] = database.create_item(transshots, "B",
+                                                      second_transaction_id,
+                                                      {message: "baz"});
+
+        [transshots, _] = database.commit_transaction(transshots, second_transaction_id);
+
+        [transshots, data] = database.get_item(transshots, first_id, "B", "current");
+        assert.equal(data.message, "foo");
+        assert.equal(data.id, first_id);
+        assert.equal(data.version, "B");
+        [transshots, data] = database.get_item(transshots, second_id, "B", "current");
+        assert.equal(data.message, "bar");
+        assert.equal(data.id, second_id);
+        assert.equal(data.version, "B");
+        [transshots, data] = database.get_item(transshots, third_id, "B", "current");
+        assert.equal(data.message, "baz");
+        assert.equal(data.id, third_id);
+        assert.equal(data.version, "B");
     });
 
-    it.skip("should reject transaction when another has already modified current", function () {
-        //let third_id;
-        //let [transshots, first_id, second_id, transaction_id] = common_transaction();
+    it("should reject transaction when another has already modified current", function () {
+        let first_id, data, first_transaction_id,
+            second_transaction_id, _;
+        let transshots = Map<string, Map<string, any>>();
+        [transshots, _] = database.create_version(transshots, "A", null, null);
+        [transshots, _] = database.create_version(transshots, "B", null, ["A"]);
+        assert.equal(transshots.get("current").size, 2);
 
-        //[transshots, third_id] = database.create_item(transshots, "B",
-                                                      //"current", {message: "foo"});
+        [transshots, first_id] = database.create_item(transshots, "B",
+                                                      "current",
+                                                      {message: "foo"});
 
-        //assert.throws(function () {
-            //database.commit_transaction(transshots, transaction_id);
-        //}, "Concurrent updates not allowed!");
+        [transshots, first_transaction_id] = database.begin_transaction(transshots, "current");
+        [transshots, second_transaction_id] = database.begin_transaction(transshots, "current");
+
+        [transshots, _] = database.update_item(transshots, first_id, "B",
+                                               first_transaction_id,
+                                               {message: "bar"});
+
+        [transshots, _] = database.commit_transaction(transshots, first_transaction_id);
+
+        [transshots, _] = database.delete_item(transshots, first_id, "B",
+                                               second_transaction_id);
+
+        assert.throws(function () {
+            [transshots, _] = database.commit_transaction(transshots, second_transaction_id);
+        }, Error);
+
+        [transshots, data] = database.get_item(transshots, first_id, "B", "current");
+        assert.equal(data.message, "bar");
+        assert.equal(data.id, first_id);
+        assert.equal(data.version, "B");
     });
 });
 
@@ -581,12 +631,12 @@ describe("the versionbase server", function () {
             result: null
         }
 
-        var second_response_message = {
+        let second_response_message = {
             status: 0,
             message: "",
             message_id: "bar"
-        }
-        console.log(transshots);
+        };
+
         [transshots, _] = test_message_send(transshots,
                                             [first_request_message, second_request_message],
                           function (socket_mock) {

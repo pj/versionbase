@@ -1,6 +1,6 @@
 import * as program from 'commander';
 import {create_server} from './server';
-import * as winston from "winston";
+var winston = require('winston');
 
 let _program: any = program;
 

@@ -21,8 +21,7 @@
   "scripts": {
     "test": "mocha --compilers ts:ts-node/register,tsx:ts-node/register",
     "preinstall": "npm install autodts",
-    "postinstall": "autodts link",
-    "prepublish": "tsc && autodts generate"
+    "postinstall": "autodts link"
   },
   "devDependencies": {
     "@lib/autodts-generator": "~0.0.1",
@@ -44,7 +43,7 @@
     "q-io": "^1.13.1",
     "sinon": "^1.17.6",
     "ts-node": "^1.2.3",
-    "typescript": "^1.8.10",
+    "typescript": "^2.0.0",
     "uuid": "^2.0.2",
     "ws": "^1.1.1"
   }

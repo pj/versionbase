@@ -173,11 +173,11 @@ export function begin_transaction(snapshots, snapshot_id) {
 }
 
 function merge_version(original_version, current_version, completed_version) {
-    let current_keys = Set.fromKeys(current_version.keys());
-    let completed_keys = Set.fromKeys(completed_version.keys());
+    let current_keys = Set.fromKeys(current_version.items);
+    let completed_keys = Set.fromKeys(completed_version.items);
 
     let new_version = new Version({parents: current_version.parents,
-                                       version_id: current_version.commit_id});
+                                   version_id: current_version.version_id});
     let keys: any = current_keys.concat(completed_keys);
     for (let key of keys) {
         let current_item = current_version.items.get(key);
@@ -208,19 +208,28 @@ function merge_version(original_version, current_version, completed_version) {
                     }
                 }
             } else {
-                // current was changed and completed was deleted - bailout
-                if (current_item !== original_item) {
-                    throw new Error(`Concurrency error: key ${key} was updated and deleted.`)
+                if (original_item !== undefined) {
+                    if (current_item !== original_item) {
+                        throw new Error(`Concurrency error: key ${key} was updated and deleted.`)
+                    } else {
+                        // if current was the same as original then completed was
+                        // deleted i.e. continue.
+                    }
                 } else {
-                    // if current was the same as original then completed was
-                    // deleted i.e. continue.
+                    // new item
+                    new_version = new_version.setIn(["items", key], current_item);
                 }
             }
         } else {
             if (completed_item) {
-                // current was deleted and completed updated - bailout.
-                if (completed_item !== original_item) {
-                    throw new Error(`Concurrency error: key ${key} was updated and deleted.`)
+                if (original_item !== undefined) {
+                    // current was deleted and completed updated - bailout.
+                    if (completed_item !== original_item) {
+                        throw new Error(`Concurrency error: key ${key} was updated and deleted.`)
+                    }
+                } else {
+                    // new item
+                    new_version = new_version.setIn(["items", key], completed_item);
                 }
             } else {
                 throw new Error(`Concurrency error: key ${key} but no items (this shouldn't be possible)`);
@@ -249,9 +258,11 @@ function merge_transshots(original, current, completed) {
                 let original_version = original.get(commit_id);
 
                 // both are different, merge.
-                if (completed_version !== original_version && current_version !== original_version) {
-                    new_version = merge_version(original_version, current_version,
-                                                   completed_version);
+                if (completed_version !== original_version &&
+                    current_version !== original_version) {
+                    new_version = merge_version(original_version,
+                                                current_version,
+                                                completed_version);
                 // completed_version has changed.
                 } else if (completed_version !== original_version) {
                     new_version = completed_version;
@@ -266,7 +277,7 @@ function merge_transshots(original, current, completed) {
         new_transshots = new_transshots.set(commit_id, new_version);
     }
 
-    return [new_transshots, null];
+    return new_transshots;
 }
 
 export function commit_transaction(snapshots, transaction_id) {
@@ -278,7 +289,7 @@ export function commit_transaction(snapshots, transaction_id) {
         new_current = completed_transaction;
     } else {
         new_current = merge_transshots(original_snapshot, current_snapshot,
-                                         completed_transaction);
+                                       completed_transaction);
     }
 
     snapshots = snapshots.set("current", new_current);
