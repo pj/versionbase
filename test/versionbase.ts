@@ -90,7 +90,8 @@ describe("the versionbase server", function () {
         }
 
         // DELETE THIS AND IT WILL FAIL!
-        console.log;
+        console.log("blah");
+        // -------------
 
         [transshots, _] = test_message_send(transshots,
                                             [first_request_message, second_request_message],

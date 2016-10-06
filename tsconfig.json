@@ -10,6 +10,7 @@
         "src/versionbase.ts",
         "src/scripts/add_version.ts",
         "src/scripts/add_all_versions.ts",
-        "src/client.ts"
+        "src/client.ts",
+        "test/versionbase.ts"
     ]
 }
