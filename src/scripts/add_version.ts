@@ -5,7 +5,7 @@ async function add_version() {
     if (process.argv.length === 3) {
         await connection.create_version(process.argv[2]);
     } else if (process.argv.length === 4) {
-        await connection.create_version(process.argv[2], process.argv[3]);
+        await connection.create_version(process.argv[2], [process.argv[3]]);
     } else {
         throw new Error("Git hash and commit id required");
     }

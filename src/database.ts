@@ -83,7 +83,8 @@ export function find_items(snapshots, version_id, transaction_id,
 export function create_version(snapshots, commit_id, data_parent_id, parents) {
     let new_version;
     // handle initial commit.
-    if (parents === null || parents === undefined) {
+    if (parents === null || parents === undefined ||
+        (Array.isArray(parents) && parents.length === 0)) {
         // FIXME: git can apparently have multiple independent intial commits,
         // not sure if this should be allowed?
         new_version = new Version({parents: Seq(), version_id: commit_id});

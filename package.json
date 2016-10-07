@@ -12,16 +12,18 @@
   "files": [
     "dist"
   ],
-  "main": "dist/index.js",
+  "main": "dist/client.js",
   "bin": {
-    "versionbase": "dist/versionbase/versionbase.js",
-    "add_version": "dist/versionbase/scripts/add_version.js",
-    "add_all_versions": "dist/versionbase/scripts/add_all_versions.js"
+    "versionbase": "dist/versionbase.js",
+    "add_version": "dist/scripts/add_version.js",
+    "add_all_versions": "dist/scripts/add_all_versions.js"
   },
   "scripts": {
     "test": "mocha --compilers ts:ts-node/register,tsx:ts-node/register",
+    "start": "node dist/versionbase.js",
     "preinstall": "npm install autodts",
-    "postinstall": "autodts link"
+    "postinstall": "autodts link",
+    "prepublish": "tsc"
   },
   "devDependencies": {
     "@lib/autodts-generator": "~0.0.1",

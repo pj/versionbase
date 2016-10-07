@@ -1,3 +1,4 @@
+#!/usr/bin/env node --harmony
 import {Connection} from '../client';
 import * as utils from '../utils';
 
@@ -7,12 +8,10 @@ async function do_stuff() {
     let lines = output[0].split("\n");
     lines.reverse();
     for (let line of lines) {
-        let [commit_id, parent_id] = line.split(" ");
-        //console.log(line);
-        //console.log(`${commit_id}-${parent_id}`);
+        let [commit_id, ...parents] = line.split(" ");
         let version_exists = await connection.version_exists(commit_id);
         if (!version_exists) {
-            await connection.create_version(commit_id, parent_id);
+            await connection.create_version(commit_id, parents);
         }
     }
     await connection.disconnect();

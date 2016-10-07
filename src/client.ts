@@ -140,8 +140,8 @@ export class Connection {
         return this.sendRequest("delete", {item_id: item_id});
     }
 
-    find(connection) {
-
+    find(select, filter) {
+        return this.sendRequest("find", {select: select, filter: filter});
     }
 
     async begin(snapshot_id) {
@@ -190,10 +190,10 @@ export class Connection {
         return this.sendRequest("delete_snapshot", {snapshot_id: snapshot_id});
     }
 
-    create_version(commit_id, parent_commit_id) {
+    create_version(commit_id:string, parent_commits: string[], data_parent_id?: string) {
         let message;
-        if (parent_commit_id) {
-            message = {commit_id: commit_id, parent_commit_id: parent_commit_id};
+        if (parent_commits) {
+            message = {commit_id: commit_id, parents: parent_commits};
         } else {
             message = {commit_id: commit_id};
         }
