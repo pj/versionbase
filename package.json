@@ -44,6 +44,8 @@
     "q": "^1.4.1",
     "q-io": "^1.13.1",
     "sinon": "^1.17.6",
+    "transit-immutable-js": "^0.6.0",
+    "transit-js": "^0.8.846",
     "ts-node": "^1.2.3",
     "typescript": "^2.0.0",
     "uuid": "^2.0.2",

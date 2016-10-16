@@ -11,7 +11,7 @@ var uuid = require('uuid');
 
 var pi = require('pretty-immutable');
 
-let Version = Record({parents: null, version_id: null, items: Map()});
+export let Version = Record({parents: null, version_id: null, items: Map()}, 'Version');
 
 function check_transaction_and_version(snapshots, transaction_id, version_id) {
     if (snapshots.has(transaction_id)) {

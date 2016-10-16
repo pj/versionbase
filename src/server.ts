@@ -5,6 +5,12 @@ import {Server as WebSocketServer} from 'ws';
 import * as database from './database';
 import {Map} from "immutable";
 import * as winston from "winston";
+import * as fs from "fs";
+
+var transit = require('transit-immutable-js');
+var jsonfile = require('jsonfile');
+var recordTransit = transit.withRecords([database.Version]);
+var path = require('path');
 
 function generate_result(result, message_id, status=0, message="") {
     return JSON.stringify({
@@ -127,13 +133,34 @@ export function handle_message(ws, transshots, raw_message) {
     }
 }
 
-export function create_server(port=9876) {
-    let transshots = Map();
+export function create_server(port, file_path) {
+    let transshots;
+    try {
+        let stat = fs.statSync(file_path);
+        if (stat.isFile()) {
+            try {
+                transshots = recordTransit.fromJSON(jsonfile.readFileSync(file_path));
+            } catch (e) {
+                winston.error("Unable to open datafile", e);
+                process.exit(1);
+            }
+        } else {
+            winston.error("Passed file exists but is not a file");
+            process.exit(1);
+        }
+    } catch (e) {
+        transshots = Map();
+    }
+
     const wss = new WebSocketServer({ port: port });
     wss.on('connection', function connection(ws) {
         winston.debug("connected to client");
         ws.on('message', function (raw_message) {
-            transshots = handle_message(ws, transshots, raw_message);
+            let new_transshots = handle_message(ws, transshots, raw_message);
+
+            jsonfile.writeFileSync(file_path,
+                                   recordTransit.toJSON(new_transshots));
+            transshots = new_transshots;
         });
 
         ws.on('error', function (error) {
