@@ -709,6 +709,29 @@ describe("the versionbase server", function () {
         test_message_send(transshots, [first_request_message], [first_response_message]);
     });
 
+    it("should return existing transshots when there is an error", function () {
+        let transshots = Map();
+        let item_id, _;
+        [transshots, _] = database.create_version(transshots, "A", null, null);
+        [transshots, item_id] = database.create_item(transshots, "A",
+                                                     "current", {"hello": "world"});
+
+        let first_request_message = {
+            operation: "find",
+            message_id: "foo",
+            version_id: "A",
+            select: "blah"
+        }
+
+        let [unchanged_transshots, socket] = test_message_send(transshots,
+                          [first_request_message],
+                          function (socket_mock) {
+                              socket_mock.expects("close").once().withArgs(1011);
+                          });
+
+        assert.strictEqual(transshots, unchanged_transshots);
+    });
+
     it.skip("should apply two transactions in order.", function () {
         let transshots = Map();
         let item_id, _;

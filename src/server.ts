@@ -130,6 +130,7 @@ export function handle_message(ws, transshots, raw_message) {
     } catch(e) {
         winston.error("database error", e)
         ws.close(1011, generate_result(e.stack, 1, e.toString()))
+        return transshots;
     }
 }
 
